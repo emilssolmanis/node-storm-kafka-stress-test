@@ -102,8 +102,9 @@ io_serv.sockets.on('connection', function(socket) {
 
         data.user = socket.id;
         kafkaCallbacks[data.user] = function(result) {
-                delete result.user;
-                socket.emit('kafkaResponse', result);
+            delete result.user;
+            socket.emit('kafkaResponse', result);
+            socket.disconnect();
         }
         producer.send(JSON.stringify(data), function(err) {
             if (err) {
