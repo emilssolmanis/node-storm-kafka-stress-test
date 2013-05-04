@@ -5,15 +5,18 @@ import io.socket.IOCallback;
 import io.socket.SocketIO;
 import io.socket.SocketIOException;
 
+import java.net.MalformedURLException;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+
+import java.util.concurrent.Callable;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
 public class StressTest {
-    private static class RequestLatencyTest implements IOCallback {
+    private static class KafkaLatencyRequest implements IOCallback {
         private Date receivedTime;
         private volatile String response;
         
@@ -25,7 +28,7 @@ public class StressTest {
             this.receivedTime = receivedTime;
         }
         
-        public RequestLatencyTest() {
+        public KafkaLatencyRequest() {
             this.response = null;
         }
 
@@ -81,32 +84,61 @@ public class StressTest {
         }
     }
 
-    public static void main(String[] args) throws Exception {
-        Date started = new Date();
-        SocketIO socket = new SocketIO("http://localhost:3000/");
+    private static class LatencySample implements Callable<Long> {
+        private String msg;
         
-        RequestLatencyTest reqLat = new RequestLatencyTest();
-        socket.connect(reqLat);
-
-        Map<String, String> reqParams = new HashMap<String, String>();
-        reqParams.put("paramValue", "1");
-        socket.emit("kafkaRequest", reqParams);
-
-        boolean waiting = true;
-        // Java gets stuck for some weird reason if we don't implement a loop body
-        while(waiting) {
-            waiting = reqLat.getResponse() == null;
+        public String getMsg() {
+            return msg;
         }
-        socket.disconnect();
+        
+        public void setMsg(String msg) {
+            this.msg = msg;
+        }
 
-        System.out.printf("Took %d millis\n", reqLat.getReceivedTime().getTime() - started.getTime());
+        private String getTargetMsg() {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 4; i++) {
+                sb.append(msg);
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public Long call() {
+            Date started = new Date();
+            long startMillis = started.getTime();
+
+            SocketIO socket = null;
+            try {
+                socket = new SocketIO("http://localhost:3000/");
+            } catch (MalformedURLException ex) {
+                throw new RuntimeException(ex);
+            }
+        
+            KafkaLatencyRequest reqLat = new KafkaLatencyRequest();
+            socket.connect(reqLat);
+
+            Map<String, String> reqParams = new HashMap<String, String>();
+            reqParams.put("paramValue", this.msg);
+            socket.emit("kafkaRequest", reqParams);
+
+            // wait for max 5s
+            while (reqLat.getResponse() == null 
+                   && (new Date().getTime() - startMillis) < 5000)  {
+            }
+            socket.disconnect();
+                
+            long receivedMillis = reqLat.getReceivedTime().getTime();
+            long lat = receivedMillis - startMillis;
+            if (lat > 5000 || !reqLat.getResponse().equals(getTargetMsg())) {
+                lat = -1;
+            }
+
+            return lat;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        System.out.printf("Took millis\n");
     }
 }
-
-
-
-
-
-
-
-
