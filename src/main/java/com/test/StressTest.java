@@ -6,11 +6,18 @@ import io.socket.SocketIO;
 import io.socket.SocketIOException;
 
 import java.net.MalformedURLException;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-
+import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -62,12 +69,12 @@ public class StressTest {
 
         @Override
         public void onDisconnect() {
-            System.out.println("Connection terminated.");
+            // System.out.println("Connection terminated.");
         }
 
         @Override
         public void onConnect() {
-            System.out.println("Connection established");
+            // System.out.println("Connection established");
         }
 
         @Override
@@ -85,6 +92,10 @@ public class StressTest {
     }
 
     private static class LatencySample implements Callable<Long> {
+        public LatencySample(String msg) {
+            this.msg = msg;
+        }
+
         private String msg;
         
         public String getMsg() {
@@ -128,10 +139,13 @@ public class StressTest {
             }
             socket.disconnect();
                 
-            long receivedMillis = reqLat.getReceivedTime().getTime();
-            long lat = receivedMillis - startMillis;
-            if (lat > 5000 || !reqLat.getResponse().equals(getTargetMsg())) {
-                lat = -1;
+            long lat = -1;
+            if (reqLat.getResponse() != null ) {
+                long receivedMillis = reqLat.getReceivedTime().getTime();
+                lat = receivedMillis - startMillis;
+                if (lat > 5000) {
+                    lat =  -1;
+                }
             }
 
             return lat;
@@ -139,6 +153,38 @@ public class StressTest {
     }
 
     public static void main(String[] args) throws Exception {
-        System.out.printf("Took millis\n");
+        Logger logger = Logger.getLogger("io.socket");
+        logger.setLevel(Level.SEVERE);
+
+        Random random = new Random();
+        // ExecutorService executorService = Executors.newCachedThreadPool();
+        ExecutorService executorService = Executors.newFixedThreadPool(Integer.parseInt(args[0]));
+        List<Callable<Long>> calls = new ArrayList<>();
+        int numCalls = Integer.parseInt(args[1]);
+        for (int i = 0; i < numCalls; i++) {
+            calls.add(new LatencySample(Integer.toString(random.nextInt())));
+        }
+        System.out.printf("Starting...\n");
+        List<Future<Long>> futures = executorService.invokeAll(calls);
+        executorService.shutdown();
+
+        System.out.printf("Done, calculating stats...\n");
+        double sum = 0;
+        long max = Long.MIN_VALUE;
+        long min = Long.MAX_VALUE;
+        long num = 0;
+        for (Future<Long> millis : futures) {
+            long m = millis.get();
+            if (m >= 0) {
+                sum += m;
+                num++;
+                max = Math.max(max, m);
+                min = Math.min(min, m);
+            }
+        }
+        System.out.printf("Mean response time %.4f millis\n", sum / num);
+        System.out.printf("Max response time %d millis\n", max);
+        System.out.printf("Min response time %d millis\n", min);
+        System.exit(0);
     }
 }

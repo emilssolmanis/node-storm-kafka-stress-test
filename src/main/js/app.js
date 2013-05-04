@@ -15,6 +15,17 @@ var io = require('socket.io');
 var Producer = require('prozess').Producer;
 var Consumer = require('prozess').Consumer;
 
+var measured = require('measured');
+var monitoring = {
+    "stats": measured.createCollection(),
+    "memory": new measured.Gauge(function() {
+        return process.memoryUsage().rss;
+    }),
+    "uptime": new measured.Gauge(function() {
+        return Math.round(process.uptime());
+    })
+}
+
 var kafkaCallbacks = {};
 
 var options = {host : 'localhost', topic : 'node-kafka-storm-output', partition : 0, offset : 0};
@@ -74,12 +85,21 @@ app.get('/kafka/:kafkaParam', function(req, res) {
     res.render('kafka', {});
 });
 
+app.get('/status', function (req, res) {
+    var status = monitoring.stats.toJSON();
+    res.writeHead(200, {"Content-Type": "application/json"});
+    res.write(JSON.stringify(status));
+    res.end();
+});
+
 var server = http.createServer(app);
 var io_serv = io.listen(server);
 io_serv.set('log level', 1);
 
 io_serv.sockets.on('connection', function(socket) {
     socket.on('kafkaRequest', function(data) {
+        monitoring.stats.meter('requestsPerSecond').mark();
+
         data.user = socket.id;
         kafkaCallbacks[data.user] = function(result) {
                 delete result.user;
