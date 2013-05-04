@@ -1,5 +1,6 @@
 package com.test.storm;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.Properties;
 
@@ -14,13 +15,18 @@ import backtype.storm.topology.base.BaseRichBolt;
 import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Tuple;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 public class DoubleKafkaBolt extends BaseRichBolt {
     private OutputCollector collector;
+    private ObjectMapper mapper;
     private Producer<Integer, String> producer;
 
     @Override
     public void prepare(Map conf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
+        this.mapper = new ObjectMapper();
 
         Properties props = new Properties();
 
@@ -33,14 +39,28 @@ public class DoubleKafkaBolt extends BaseRichBolt {
         this.producer = new Producer<Integer, String>(config);
     }
 
-    @Override
+    @Override    
+    @SuppressWarnings("unchecked")
     public void execute(Tuple input) {
-        String inputParam = input.getString(0);
+        String message = input.getString(0);
+        
+        Map<String, Object> record = null;
+        try {
+            record = mapper.readValue(message, Map.class);
+        } catch (IOException e) {
+            throw new RuntimeException("Error reading JSON from Kafka!");
+        }
+        String paramValue = record.get("paramValue").toString();
         StringBuilder sb = new StringBuilder();
-        sb.append(inputParam);
-        sb.append(inputParam);
+        sb.append(paramValue);
+        sb.append(paramValue);
+        record.put("paramValue", sb.toString());
 
-        producer.send(new ProducerData<Integer, String>("node-kafka-storm-output", sb.toString()));
+        try {
+            producer.send(new ProducerData<Integer, String>("node-kafka-storm-output", mapper.writeValueAsString(record)));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Error writing JSON to Kafka!");
+        }
 
         collector.ack(input);
     }

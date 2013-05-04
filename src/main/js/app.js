@@ -15,6 +15,8 @@ var io = require('socket.io');
 var Producer = require('prozess').Producer;
 var Consumer = require('prozess').Consumer;
 
+var kafkaCallbacks = {};
+
 var options = {host : 'localhost', topic : 'node-kafka-storm-output', partition : 0, offset : 0};
 var consumer = new Consumer(options);
 consumer.connect(function(err){
@@ -26,7 +28,14 @@ consumer.connect(function(err){
         // console.log("consuming: " + consumer.topic);
         consumer.consume(function(err, messages) {
             if (!err && messages.length > 0) {
-                console.log(messages.map(function(elem) { return elem.payload.toString('utf-8'); }));
+                messages.forEach(function (msg) {
+                    var result = JSON.parse(msg.payload.toString('utf-8'));
+                    if (result.user in kafkaCallbacks) {
+                        kafkaCallbacks[result.user](result);
+                        delete kafkaCallbacks[result.user];
+                    }
+                });
+                // console.log(messages.map(function(elem) { return elem.payload.toString('utf-8'); }));
             }
         });
     }, 100);
@@ -62,24 +71,29 @@ if ('development' == app.get('env')) {
 app.get('/', routes.index);
 app.get('/users', user.list);
 app.get('/kafka/:kafkaParam', function(req, res) {
-    var message = { paramValue: req.params.kafkaParam };
-    producer.send(JSON.stringify(message), function(err) {
-        if (err) {
-            console.log("send error: ", err);
-        } else {
-            console.log("message sent");
-        }
-    });
     res.render('kafka', {});
 });
 
 var server = http.createServer(app);
 var io_serv = io.listen(server);
+io_serv.set('log level', 1);
 
 io_serv.sockets.on('connection', function(socket) {
-    console.log(socket.id);
     socket.on('kafkaRequest', function(data) {
-        console.log(data);
+        data.user = socket.id;
+        kafkaCallbacks[data.user] = function(result) {
+                delete result.user;
+                socket.emit('kafkaResponse', result);
+        }
+        producer.send(JSON.stringify(data), function(err) {
+            if (err) {
+                console.log("send error: ", err);
+            }
+        });
+    });
+    
+    socket.on('disconnect', function() {
+        delete kafkaCallbacks[socket.id];
     });
 });
 

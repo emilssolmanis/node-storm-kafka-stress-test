@@ -11,6 +11,7 @@ import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Tuple;
 import backtype.storm.tuple.Values;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class DoubleBolt extends BaseRichBolt {
@@ -24,19 +25,27 @@ public class DoubleBolt extends BaseRichBolt {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public void execute(Tuple input) {
         String message = input.getString(0);
-        String paramValue = null;
+        
+        Map<String, Object> record = null;
         try {
-            Map<String, Object> record = mapper.readValue(message, Map.class);
-            paramValue = record.get("paramValue").toString();
+            record = mapper.readValue(message, Map.class);
         } catch (IOException e) {
-            paramValue = "error";
+            throw new RuntimeException("Error reading JSON from Kafka!");
         }
+        String paramValue = record.get("paramValue").toString();
         StringBuilder sb = new StringBuilder();
         sb.append(paramValue);
         sb.append(paramValue);
-        collector.emit(input, new Values(sb.toString()));
+        record.put("paramValue", sb.toString());
+
+        try {
+            collector.emit(input, new Values(mapper.writeValueAsString(record)));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Error emitting JSON!");
+        }
         collector.ack(input);
     }
 
