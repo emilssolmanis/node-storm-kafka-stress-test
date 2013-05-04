@@ -1,0 +1,11 @@
+node_modules/
+*.crc
+*~
+*.pyc
+*.class
+*.jar
+\.classpath
+\.project
+\.settings/
+dist/
+target/

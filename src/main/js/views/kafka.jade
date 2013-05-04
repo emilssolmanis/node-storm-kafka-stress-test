@@ -1,0 +1,16 @@
+doctype 5
+html
+  head
+    script(src='/javascripts/jquery.min.js')
+    script(src='/socket.io/socket.io.js')
+    script
+      var socket = io.connect('http://localhost:3000');
+      socket.emit('kafkaRequest', { paramValue: document.location.href.split('/').pop() });
+      socket.on('kafkaResponse', function(data) {
+          $('.message').text(data.response);
+      });
+    title Kafka test page
+    link(rel='stylesheet', href='/stylesheets/style.css')
+  body
+    p Handled
+    .message Waiting...
