@@ -22,6 +22,11 @@ import java.util.logging.Logger;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+/* Uses https://github.com/Gottox/socket.io-java-client
+ * 
+ * TODO: At it's current state, this is nonworking, because the socket.io Java client
+ * is non-suitable for synchronized use. Check the node.js stress-test.
+ */
 public class StressTest {
     private static class KafkaLatencyRequest implements IOCallback {
         private Date receivedTime;
